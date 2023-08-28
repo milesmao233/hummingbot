@@ -10,12 +10,13 @@ from joblib import Parallel, delayed
 
 from hummingbot import data_path
 from hummingbot.connector.constants import s_decimal_0
-from hummingbot.core.data_type.common import OrderType, TradeType, PositionMode
+from hummingbot.connector.derivative.position import Position
+from hummingbot.connector.trading_rule import TradingRule
+from hummingbot.core.data_type.common import OrderType, TradeType, PositionAction
 from hummingbot.core.data_type.order_candidate import OrderCandidate, PerpetualOrderCandidate
 from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
 from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.data_feed.candles_feed.candles_factory import CandlesFactory
-from hummingbot.connector.derivative.position import Position
 
 
 # from hummingbot.strategy.filter_factors
@@ -324,6 +325,7 @@ class DynamicHedge(ScriptStrategyBase):
 
     # markets = {exchange: {"ETH-USDT", "BTC-USDT"}}
     symbol_list = [
+        # "DYDX-USDT",
         "DOGE-USDT", "SOL-USDT", "DYDX-USDT", "1000PEPE-USDT", "LPT-USDT"
         # "ENS-USDT", "APE-USDT", "MATIC-USDT", "ADA-USDT", "ATOM-USDT", "FIL-USDT",
         # "AR-USDT", "PEOPLE-USDT", "AAVE-USDT", "UNI-USDT", "DYDX-USDT",
@@ -334,6 +336,7 @@ class DynamicHedge(ScriptStrategyBase):
     index_list = ["ETH-USDT", "BNB-USDT"]
 
     trading_pairs: str = {
+        # "DYDX-USDT", "ETH-USDT", "BNB-USDT",
         "DOGE-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "DYDX-USDT", "1000PEPE-USDT", "LPT-USDT"
         # "ENS-USDT", "APE-USDT", "MATIC-USDT", "ADA-USDT", "ATOM-USDT", "FIL-USDT",
         # "AR-USDT", "PEOPLE-USDT", "AAVE-USDT", "UNI-USDT", "DYDX-USDT",
@@ -341,7 +344,7 @@ class DynamicHedge(ScriptStrategyBase):
         # "ICP-USDT"
     }
     intervals = ["1m"]
-    days_to_download = 7
+    days_to_download = 6
     exchange: str = "binance_perpetual"
     max_one_order_amount = 500
 
@@ -688,7 +691,7 @@ class DynamicHedge(ScriptStrategyBase):
                 # process_coin = pd.concat([last_row_eth, last_row_btc, last_row_btc, last_row_doge, last_row_sol])
                 if not symbol_order.empty:
                     twap_symbol_info_list = get_twap_symbol_info_list(symbol_order, self.max_one_order_amount)
-                    # print('拆单信息：\n', twap_symbol_info_list)
+                    print('拆单信息：\n', twap_symbol_info_list)
 
                     # =====遍历下单
                     proposal = []
@@ -698,16 +701,17 @@ class DynamicHedge(ScriptStrategyBase):
                         proposal.extend(orders)
 
                     if len(proposal) > 0:
-                        adjusted_proposal: List[OrderCandidate] = self.connector.budget_checker.adjust_candidates(
+                        adjusted_proposal = self.connector.budget_checker.adjust_candidates(
                             proposal, all_or_none=True)
                         print('adjusted_proposal \n', adjusted_proposal)
                         for order in adjusted_proposal:
+                            order_close = PositionAction.CLOSE if order.position_close else PositionAction.OPEN
                             if order.order_side == TradeType.BUY:
                                 self.buy(self.exchange, order.trading_pair, order.amount,
-                                         order.order_type, Decimal(order.price))
+                                         order.order_type, Decimal(order.price), position_action=order_close)
                             elif order.order_side == TradeType.SELL:
                                 self.sell(self.exchange, order.trading_pair, order.amount,
-                                          order.order_type, Decimal(order.price))
+                                          order.order_type, Decimal(order.price), position_action=order_close)
                 else:
                     print('没有需要下单的信息...')
 
@@ -722,9 +726,8 @@ class DynamicHedge(ScriptStrategyBase):
                 is_bid = True
             else:
                 is_bid = False
+            # 根据最小递进下单量，进行下单量的调整，取小数
             quantity = self.connector.quantize_order_amount(symbol, Decimal(abs(quantity)))
-            if quantity == s_decimal_0:
-                continue
 
             mid_price = self.connector.get_mid_price(symbol)
             bid_spread = Decimal(.1)
@@ -735,6 +738,17 @@ class DynamicHedge(ScriptStrategyBase):
             price = bid_price if is_bid else ask_price
             price = self.connector.quantize_order_price(symbol, Decimal(price))
             reduce_only = True if row['交易模式'] == '清仓' else False
+
+            trading_rule: TradingRule = self.connector.trading_rules[symbol]
+            # 清仓状态不跳过
+            if not reduce_only:
+                if quantity == s_decimal_0:
+                    print(symbol, '交易 quantity 为 0')
+                    continue
+                elif quantity * price < trading_rule.min_notional_size:
+                    print(symbol, '交易金额是小于最小下单金额，跳过该笔交易')
+                    print('下单量：', quantity, '价格：', price)
+                    continue
 
             order = PerpetualOrderCandidate(
                 trading_pair=symbol,
