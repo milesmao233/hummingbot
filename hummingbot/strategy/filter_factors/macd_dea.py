@@ -13,7 +13,7 @@ def signal(*args):
 
     df = calc_period_macd(df, column_name, macd_params, macd_period)
 
-    time_period_min = macd_period / 60
+    time_period_min = int(macd_period / 60)
     dea_name = f'dea_{time_period_min}_{column_name}'
 
     df[factor_name] = df[dea_name]
