@@ -1,22 +1,80 @@
 import os
-import queue
+import base64
+import hashlib
+import hmac
+import json
 import time
-from datetime import datetime, timedelta
-from decimal import Decimal
-from typing import Any, Dict, List
+import requests
 
 import numpy as np
 import pandas as pd
+
+from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import Dict
+from urllib import parse
 from joblib import Parallel, delayed
 
 from hummingbot import data_path
 from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.connector.derivative.position import Position
 from hummingbot.core.data_type.common import OrderType, PriceType
-from hummingbot.data_feed.candles_feed.candles_factory import CandlesFactory
+from hummingbot.data_feed.candles_feed.candles_factory import CandlesFactory, CandlesConfig
 from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
 
 pd.set_option('expand_frame_repr', False)  # 当列太多时不换行
+
+# 钉钉api
+dingding_api = {
+    'robot_id': '27f1b4a51df681a65056b700fb2adc7d3df968887c20efd76719bfe759c540b3',
+    'secret': 'SEC4c59245a55e3bcdb6842969f0a85aaa71fe3df12de77f92fe531038e84d5bdab',
+}
+
+
+# ===发送钉钉相关函数
+# 计算钉钉时间戳
+def cal_timestamp_sign(secret):
+    # 根据钉钉开发文档，修改推送消息的安全设置https://ding-doc.dingtalk.com/doc#/serverapi2/qf2nxq
+    # 也就是根据这个方法，不只是要有robot_id，还要有secret
+    # 当前时间戳，单位是毫秒，与请求调用时间误差不能超过1小时
+    # python3用int取整
+    timestamp = int(round(time.time() * 1000))
+    # 密钥，机器人安全设置页面，加签一栏下面显示的SEC开头的字符串
+    secret_enc = bytes(secret.encode('utf-8'))
+    string_to_sign = '{}\n{}'.format(timestamp, secret)
+    string_to_sign_enc = bytes(string_to_sign.encode('utf-8'))
+    hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
+    # 得到最终的签名值
+    sign = parse.quote_plus(base64.b64encode(hmac_code))
+    return str(timestamp), str(sign)
+
+
+def send_dingding_msg(content, dingding_api):
+    """
+    :param content:
+    :param robot_id:  你的access_token，即webhook地址中那段access_token。
+                        例如如下地址：https://oapi.dingtalk.com/robot/send?access_token=81a0e96814b4c8c3132445f529fbffd4bcce66
+    :param secret: 你的secret，即安全设置加签当中的那个密钥
+    :return:
+    """
+
+    robot_id = dingding_api['robot_id']
+    secret = dingding_api['secret']
+
+    try:
+        msg = {
+            "msgtype": "text",
+            "text": {"content": content + '\n' + datetime.now().strftime("%m-%d %H:%M:%S")}}
+        headers = {"Content-Type": "application/json;charset=utf-8"}
+        # https://oapi.dingtalk.com/robot/send?access_token=XXXXXX&timestamp=XXX&sign=XXX
+        timestamp, sign_str = cal_timestamp_sign(secret)
+        url = 'https://oapi.dingtalk.com/robot/send?access_token=' + robot_id + \
+              '&timestamp=' + timestamp + '&sign=' + sign_str
+        body = json.dumps(msg)
+        requests.post(url, data=body, headers=headers, timeout=10)
+        print('成功发送钉钉', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    except Exception as e:
+        print("发送钉钉失败:", e, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 def to_offset_candles(df):
@@ -299,7 +357,7 @@ class DynamicHedgeQueue(ScriptStrategyBase):
             {
                 'filter': 'rolling_sum',
                 'column_name': 'quote_volume',
-                'params_list': [1, 5]
+                'params_list': [1, 5, 60]
             },
             {
                 'filter': 'quote_volume_history_period_x_times',
@@ -315,11 +373,11 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                         480,
                         10
                     ],
-                    # [
-                    #     60,
-                    #     480,
-                    #     3
-                    # ]
+                    [
+                        60,
+                        480,
+                        3
+                    ]
                 ]
             },
             {
@@ -498,17 +556,24 @@ class DynamicHedgeQueue(ScriptStrategyBase):
         combinations = [(trading_pair, interval) for trading_pair in self.trading_pairs for interval in self.intervals]
         self.candles = {f"{combinations[0]}_{combinations[1]}": {} for combinations in combinations}
         for combination in combinations:
-            candle_history = CandlesFactory.get_candle(connector=self.exchange, trading_pair=combination[0],
-                                                       interval=combination[1],
-                                                       max_records=self.get_max_records(self.days_to_download,
-                                                                                        combination[1]))
+            candle_config = CandlesConfig(
+                connector=self.exchange,
+                trading_pair=combination[0],
+                interval=combination[1],
+                max_records=self.get_max_records(self.days_to_download, combination[1])
+            )
+            candle_history = CandlesFactory.get_candle(candle_config)
             self.candles[f"{combination[0]}_{combination[1]}"]["candle_history"] = candle_history
             self.candles[f"{combination[0]}_{combination[1]}"][
                 "csv_path"] = data_path() + f"/candles_{self.exchange}_{combination[0]}_{combination[1]}.csv"
 
-            current_candles = CandlesFactory.get_candle(connector=self.exchange, trading_pair=combination[0],
-                                                        interval=combination[1],
-                                                        max_records=self.current_candles_num)
+            current_candle_config = CandlesConfig(
+                connector=self.exchange,
+                trading_pair=combination[0],
+                interval=combination[1],
+                max_records=self.current_candles_num
+            )
+            current_candles = CandlesFactory.get_candle(current_candle_config)
             current_candles.start()
             self.candles[f"{combination[0]}_{combination[1]}"]["current_candles"] = current_candles
             self.candles[f"{combination[0]}_{combination[1]}"]["download_kline_data"] = False
@@ -586,11 +651,13 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                 current_time = datetime.now()
                 print(f'当前时间 {current_time}，开始获取最新数据并进行计算')
 
-                for waiting_dict in self.in_waiting_list:
-                    symbol = waiting_dict['symbol']
-                    enter_time = waiting_dict['enter_time']
+                for waiting_symbol in self.in_waiting_list:
+                    symbol = self.observed_symbol_param[waiting_symbol]['symbol']
+                    enter_time = self.observed_symbol_param[waiting_symbol]['enter_time']
                     if current_time - enter_time > timedelta(minutes=(self.strategy_conf['conf']["g_observed_timeout"] / 60)):
-                        self.in_waiting_list.remove(waiting_dict)
+                        self.in_waiting_list.remove(waiting_symbol)
+                        # self.observed_symbol_param {} 移除 symbol
+                        self.observed_symbol_param.pop(symbol)
                         self.logger().info(f'reason: waiting timeout, {symbol} remove from in_waiting_list, time: {current_time}')
 
                 new_candles_dict = self.get_new_last_df()
@@ -903,6 +970,9 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                 enter_time = waiting_result.iloc[-1]['candle_begin_time']
                 self.in_waiting_list.append(symbol)
                 self.observed_list_append(symbol, enter_time, last_two_row2)
+                send_dingding_msg(
+                    f"进入 waiting_list 信号: {symbol}  \n  当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                    dingding_api)
 
             if symbol in self.in_waiting_list:
                 # 获取 symbol_relative 的值
@@ -943,6 +1013,11 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                         self.trading_symbol_param[symbol]['open_symbol_relative'] = last_row.iloc[-1]['symbol_relative']
                         # 移除 in_waiting_list
                         self.in_waiting_list.remove(symbol)
+                        self.observed_symbol_param.pop(symbol)
+
+                        send_dingding_msg(
+                            f"进入 trading_list 信号: {symbol}  \n  当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                            dingding_api)
                     else:
                         self.logger().info(f'超过最大持仓数量 {max_trading_symbol}, 未加入 symbol: {symbol}')
 
@@ -951,7 +1026,8 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                 enter_time = self.observed_symbol_param[symbol]['enter_time']
                 if current_time - enter_time > timedelta(minutes=(conf["g_observed_timeout"] / 60)):
                     self.in_waiting_list.remove(symbol)
-                    self.logger().info(f'{symbol} remove from in_waiting_list')
+                    self.observed_symbol_param.pop(symbol)
+                    self.logger().info(f'超时 {symbol} remove from in_waiting_list')
 
             if symbol in self.in_trading_list:
                 # 获取 symbol_relative 的值
@@ -969,7 +1045,12 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                     self.in_trading_list.remove(symbol)
                     self.logger().info(f'{symbol} remove from in_trading_list')
                     self.in_waiting_list.remove(symbol)
+                    self.observed_symbol_param.pop(symbol)
                     self.logger().info(f'{symbol} remove from in_waiting_list')
+
+                    send_dingding_msg(
+                        f"移除 trading_list 信号: {symbol}  \n  止损平仓 或 超时平仓 \n 当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                        dingding_api)
 
                 # 追踪止盈
                 # 记录累积的最大相对涨幅
@@ -991,6 +1072,10 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                     self.in_waiting_list.append(symbol)
                     enter_time = last_row.iloc[-1]['candle_begin_time']
                     self.observed_list_append(symbol, enter_time, last_two_row2)
+
+                    send_dingding_msg(
+                        f"移除 trading_list 信号: {symbol}  \n  追踪止盈 放入 waiting_list \n 当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                        dingding_api)
 
         # return in_trading_list
 
