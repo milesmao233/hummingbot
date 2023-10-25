@@ -19,6 +19,7 @@ from hummingbot import data_path
 from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.connector.derivative.position import Position
 from hummingbot.core.data_type.common import OrderType, PriceType
+from hummingbot.core.event.events import BuyOrderCompletedEvent
 from hummingbot.data_feed.candles_feed.candles_factory import CandlesFactory, CandlesConfig
 from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
 
@@ -28,6 +29,11 @@ pd.set_option('expand_frame_repr', False)  # 当列太多时不换行
 dingding_api = {
     'robot_id': '27f1b4a51df681a65056b700fb2adc7d3df968887c20efd76719bfe759c540b3',
     'secret': 'SEC4c59245a55e3bcdb6842969f0a85aaa71fe3df12de77f92fe531038e84d5bdab',
+}
+
+dingding_api_waiting = {
+    'robot_id': 'f3628200d15b94367977133bd17dd46e541a946ef1ae4f70051a69b7e7d591d3',
+    'secret': 'SEC47ad8afd4567980214e8f9a5de3f3bc501063bf0b1aacb34f2cec7b3a0d33721',
 }
 
 
@@ -281,6 +287,10 @@ class DynamicHedgeQueue(ScriptStrategyBase):
     #     "DOGE-USDT", "ETH-USDT", "BTC-USDT",
     # }
 
+    account_name = "sun_account"
+    total_amount = 18000
+    every_amount = 3600
+    max_one_order_amount = 500
     intervals = ["1m"]
     days_to_download = 6
     current_candles_num = 10
@@ -296,11 +306,9 @@ class DynamicHedgeQueue(ScriptStrategyBase):
     trading_list_before_calc = []
     observed_symbol_param = {}
     trading_symbol_param = {}
-    total_amount = 100
-    every_amount = 20
-    max_one_order_amount = 500
     price_source = PriceType.MidPrice
     check_position = False
+    save_config_data_time = datetime.now().strftime("%Y%m%d%H")
 
     head_columns = [
         'candle_begin_time',
@@ -651,14 +659,14 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                 current_time = datetime.now()
                 print(f'当前时间 {current_time}，开始获取最新数据并进行计算')
 
-                for waiting_symbol in self.in_waiting_list:
-                    symbol = self.observed_symbol_param[waiting_symbol]['symbol']
-                    enter_time = self.observed_symbol_param[waiting_symbol]['enter_time']
-                    if current_time - enter_time > timedelta(minutes=(self.strategy_conf['conf']["g_observed_timeout"] / 60)):
-                        self.in_waiting_list.remove(waiting_symbol)
-                        # self.observed_symbol_param {} 移除 symbol
-                        self.observed_symbol_param.pop(symbol)
-                        self.logger().info(f'reason: waiting timeout, {symbol} remove from in_waiting_list, time: {current_time}')
+                # for waiting_symbol in self.in_waiting_list:
+                #     symbol = self.observed_symbol_param[waiting_symbol]['symbol']
+                #     enter_time = self.observed_symbol_param[waiting_symbol]['enter_time']
+                #     if current_time - enter_time > timedelta(minutes=(self.strategy_conf['conf']["g_observed_timeout"] / 60)):
+                #         self.in_waiting_list.remove(waiting_symbol)
+                #         # self.observed_symbol_param {} 移除 symbol
+                #         self.observed_symbol_param.pop(symbol)
+                #         self.logger().info(f'reason: waiting timeout, {symbol} remove from in_waiting_list, time: {current_time}')
 
                 new_candles_dict = self.get_new_last_df()
 
@@ -677,7 +685,7 @@ class DynamicHedgeQueue(ScriptStrategyBase):
 
                 # before_config_dict 与 update_index_candles_data 行数相同
                 start_time = datetime.now()
-                self.last_settle_df_dict = self.settle_last_data(before_config_dict, update_index_candles_data)
+                self.last_settle_df_dict = self.settle_last_data(before_config_dict, update_index_candles_data, start_time)
                 self.calc_trading_position()
                 # for symbol, df in self.last_settle_df_dict.items():
                 #     self.save_log(df, f'{symbol}_last_data')
@@ -730,6 +738,11 @@ class DynamicHedgeQueue(ScriptStrategyBase):
             )
             self.logger().info(f'{amount} {trading_pair} selled')
 
+        send_dingding_msg(
+            f"account: {self.account_name} \n 卖出信号: {trading_pair}  \n  当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}"
+            f" \n  时间: {datetime.now()} \n  价格: {new_price} \n  卖出数量: {np.sum(twap_symbol_amount_list)}",
+            dingding_api)
+
     def buy_with_twap_type(self, trading_pair, amount, order_type):
         new_price = self.connectors[self.exchange].get_price_by_type(trading_pair, self.price_source)
         twap_symbol_amount_list = self.get_twap_symbol_info_list(amount, self.max_one_order_amount, new_price)
@@ -742,6 +755,12 @@ class DynamicHedgeQueue(ScriptStrategyBase):
             )
             # 开仓成功 logger
             self.logger().info(f'{amount} {trading_pair} bought')
+
+        send_dingding_msg(
+            f"account: {self.account_name} \n 买入信号: {trading_pair}  \n  当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}"
+            f" \n  时间: {datetime.now()} \n  价格: {new_price} \n  买入数量: {np.sum(twap_symbol_amount_list)}",
+            dingding_api)
+
 
     @staticmethod
     def get_twap_symbol_info_list(amount, order_amount, new_price):
@@ -866,8 +885,6 @@ class DynamicHedgeQueue(ScriptStrategyBase):
 
                 config_data_last_df[symbol_name] = df.tail(self.last_candles_num)
 
-                self.save_log(df, f'{symbol_name}_config_data')
-
         return config_data_last_df
 
     def get_last_index_candles(self, history_row_candles):
@@ -970,9 +987,11 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                 enter_time = waiting_result.iloc[-1]['candle_begin_time']
                 self.in_waiting_list.append(symbol)
                 self.observed_list_append(symbol, enter_time, last_two_row2)
+                self.logger().info(f'account: {self.account_name} \n 进入 waiting_list 信号: {symbol}  \n 当前 waiting_list: {self.in_waiting_list} \n 当前 trading_list: {self.in_trading_list}')
+
                 send_dingding_msg(
-                    f"进入 waiting_list 信号: {symbol}  \n  当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
-                    dingding_api)
+                    f"account: {self.account_name} \n 进入 waiting_list 信号: {symbol}  \n  当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                    dingding_api_waiting)
 
             if symbol in self.in_waiting_list:
                 # 获取 symbol_relative 的值
@@ -1016,7 +1035,7 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                         self.observed_symbol_param.pop(symbol)
 
                         send_dingding_msg(
-                            f"进入 trading_list 信号: {symbol}  \n  当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                            f"account: {self.account_name} \n进入 trading_list 信号: {symbol}  \n 当前 waiting_list: {self.in_waiting_list} \n 当前 trading_list: {self.in_trading_list}",
                             dingding_api)
                     else:
                         self.logger().info(f'超过最大持仓数量 {max_trading_symbol}, 未加入 symbol: {symbol}')
@@ -1028,6 +1047,9 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                     self.in_waiting_list.remove(symbol)
                     self.observed_symbol_param.pop(symbol)
                     self.logger().info(f'超时 {symbol} remove from in_waiting_list')
+                    send_dingding_msg(
+                        f"account: {self.account_name} \n 超时离开 waiting_list 信号: {symbol}  \n  当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                        dingding_api_waiting)
 
             if symbol in self.in_trading_list:
                 # 获取 symbol_relative 的值
@@ -1049,7 +1071,7 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                     self.logger().info(f'{symbol} remove from in_waiting_list')
 
                     send_dingding_msg(
-                        f"移除 trading_list 信号: {symbol}  \n  止损平仓 或 超时平仓 \n 当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                        f"account: {self.account_name} \n移除 trading_list 信号: {symbol}  \n  止损平仓 或 超时平仓 \n 当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
                         dingding_api)
 
                 # 追踪止盈
@@ -1072,9 +1094,12 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                     self.in_waiting_list.append(symbol)
                     enter_time = last_row.iloc[-1]['candle_begin_time']
                     self.observed_list_append(symbol, enter_time, last_two_row2)
+                    send_dingding_msg(
+                        f"account: {self.account_name} \n 追踪止盈 放入 waiting_list : {symbol}  \n  当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                        dingding_api_waiting)
 
                     send_dingding_msg(
-                        f"移除 trading_list 信号: {symbol}  \n  追踪止盈 放入 waiting_list \n 当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
+                        f"account: {self.account_name} \n移除 trading_list 信号: {symbol}  \n  追踪止盈 放入 waiting_list \n 当前 waiting_list: {self.in_waiting_list} \n  当前 trading_list: {self.in_trading_list}",
                         dingding_api)
 
         # return in_trading_list
@@ -1349,7 +1374,7 @@ class DynamicHedgeQueue(ScriptStrategyBase):
 
         return condition_macd_1_last, condition_macd_2_last, condition_macd_3_last
 
-    def settle_last_data(self, before_config_dict, update_index_candles_data):
+    def settle_last_data(self, before_config_dict, update_index_candles_data, current_time):
         # show_df = before_config_dict['DOGE-USDT']
         # self.logger().info(f'before_config_dict: \n{show_df}')
         # # save log
@@ -1359,12 +1384,21 @@ class DynamicHedgeQueue(ScriptStrategyBase):
         # self.save_log(update_index_candles_data, 'update_index_candles_data')
 
         after_config_dict = {}
+        if self.save_config_data_time != current_time.strftime('%Y%m%d%H'):
+            save_tag = True
+            self.save_config_data_time = current_time.strftime('%Y%m%d%H')
+        else:
+            save_tag = False
+
         for symbol, df in before_config_dict.items():
             # 循环 df
             # 填充最后3行新的数据
             after_df = self.calc_last_df(symbol, df, update_index_candles_data)
             after_df = after_df.tail(self.last_candles_num)
             after_df.reset_index(drop=True, inplace=True)
+
+            if save_tag:
+                self.save_log(after_df, f'{symbol}_after_config_data')
 
             after_config_dict[symbol] = after_df
 
@@ -1652,3 +1686,17 @@ class DynamicHedgeQueue(ScriptStrategyBase):
                         df.loc[i, f'{filter_name}_pl_{column_name}_fl_{params}'] = vol_change_threshold_value
 
         return df
+
+    def did_complete_buy_order(self, event: BuyOrderCompletedEvent):
+        send_dingding_msg(
+            f"account: {self.account_name} \n 拆单买入完成信号  \n"
+            f" 订单编号: {event.order_id} \n 币种: {event.base_asset} - {event.quote_asset} \n  订单数量: base_asset: {event.base_asset_amount}, quote_asset: {event.quote_asset_amount}",
+            dingding_api
+        )
+
+    def did_complete_sell_order(self, event: BuyOrderCompletedEvent):
+        send_dingding_msg(
+            f"account: {self.account_name} \n 拆单卖出完成信号  \n"
+            f" 订单编号: {event.order_id} \n 币种: {event.base_asset} - {event.quote_asset} \n  订单数量: base_asset: {event.base_asset_amount}, quote_asset: {event.quote_asset_amount}",
+            dingding_api
+        )
