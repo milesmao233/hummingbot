@@ -1,0 +1,17 @@
+template_version: 1
+strategy: null
+connector: null
+account_name: null
+symbol_list: null
+cover_list: null
+index_list: null
+start_date: null
+total_amount: null
+every_order_amount: null
+max_one_order_amount: null
+trade_type: null
+cover_trigger: null
+dingding_robot_id: null
+dingding_secret: null
+dingding_waiting_robot_id: null
+dingding_waiting_secret: null
