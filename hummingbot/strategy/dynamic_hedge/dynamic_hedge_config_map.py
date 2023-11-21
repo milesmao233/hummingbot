@@ -37,7 +37,7 @@ dynamic_hedge_config_map = {
     "account_name":
         ConfigVar(
             key="account_name",
-            prompt="Enter the symbol list >>> ",
+            prompt="Enter the account name >>> ",
             prompt_on_new=True,
         ),
     "symbol_list":
@@ -55,7 +55,7 @@ dynamic_hedge_config_map = {
     "index_list":
         ConfigVar(
             key="index_list",
-            prompt="Enter the cover list >>> ",
+            prompt="Enter the index list >>> ",
             prompt_on_new=True,
         ),
     "start_date":
