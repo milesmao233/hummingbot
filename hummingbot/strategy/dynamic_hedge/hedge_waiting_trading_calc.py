@@ -284,6 +284,8 @@ class HedgeWaitingTradingCalc:
         self._every_order_amount = every_order_amount
         self.hedge_notify_robot = hedge_notify_robot
         self.account_name = account_name
+        self.waiting_result_dict = {}
+
 
     @property
     def in_trading_list(self):
@@ -299,7 +301,6 @@ class HedgeWaitingTradingCalc:
     def calc_trading_position(self):
         conf = strategy_conf['conf']
         trading_list_switch = strategy_conf["trading_list_switch"]
-        waiting_result_dict = {}
 
         for symbol, df in self._last_settle_df_dict.items():
             # after_df 最后几行的数据
@@ -315,12 +316,7 @@ class HedgeWaitingTradingCalc:
                 enter_time = waiting_result.iloc[-1]['candle_begin_time']
                 self._in_waiting_list.append(symbol)
                 self.observed_list_append(symbol, enter_time, last_two_row2)
-
-                waiting_result_dict[symbol] = {}
-                waiting_result_dict[symbol]['waiting_result'] = waiting_result
-                waiting_result_dict[symbol]['last_row'] = last_row
-                waiting_result_dict[symbol]['last_two_row2'] = last_two_row2
-                waiting_result_dict[symbol]['last_period_rows'] = last_period_rows
+                self.waiting_result_dict[symbol] = {}
 
                 self.hedge_notify_robot.send_dingding_waiting_msg(
                     f'account: {self.account_name} \n '
@@ -329,20 +325,27 @@ class HedgeWaitingTradingCalc:
                     f'当前 trading_list: {self.in_trading_list}'
                 )
 
+            if symbol in self._in_waiting_list:
+                self.waiting_result_dict[symbol]['waiting_result'] = waiting_result
+                self.waiting_result_dict[symbol]['last_row'] = last_row
+                self.waiting_result_dict[symbol]['last_two_row2'] = last_two_row2
+                self.waiting_result_dict[symbol]['last_period_rows'] = last_period_rows
+
                 # self.logger().info(
                 #     f'account: {self.account_name} \n 进入 waiting_list 信号: {symbol}  \n 当前 waiting_list: {self.in_waiting_list} \n 当前 trading_list: {self.in_trading_list}')
 
         for symbol in self._in_waiting_list:
-            waiting_result = waiting_result_dict[symbol]['waiting_result']
-            last_row = waiting_result_dict[symbol]['last_row']
-            last_two_row2 = waiting_result_dict[symbol]['last_two_row2']
-            last_period_rows = waiting_result_dict[symbol]['last_period_rows']
+            waiting_result = self.waiting_result_dict[symbol]['waiting_result']
+            last_row = self.waiting_result_dict[symbol]['last_row']
+            last_two_row2 = self.waiting_result_dict[symbol]['last_two_row2']
+            last_period_rows = self.waiting_result_dict[symbol]['last_period_rows']
             current_time = waiting_result.iloc[-1]['candle_begin_time']
             enter_time = self.observed_symbol_param[symbol]['enter_time']
 
             if current_time - enter_time > timedelta(minutes=(conf["g_observed_timeout"] / 60)):
                 self._in_waiting_list.remove(symbol)
                 self.observed_symbol_param.pop(symbol)
+                self.waiting_result_dict.pop(symbol)
                 # self.logger().info(f'超时 {symbol} remove from in_waiting_list')
                 self.hedge_notify_robot.send_dingding_waiting_msg(
                     f"account: {self.account_name} \n "
@@ -401,8 +404,8 @@ class HedgeWaitingTradingCalc:
                     self.logger().info(f'超过最大持仓数量 {max_trading_symbol}, 未加入 symbol: {symbol}')
 
         for symbol in self._in_trading_list:
-            last_row = waiting_result_dict[symbol]['last_row']
-            last_two_row2 = waiting_result_dict[symbol]['last_two_row2']
+            last_row = self.waiting_result_dict[symbol]['last_row']
+            last_two_row2 = self.waiting_result_dict[symbol]['last_two_row2']
 
             # 获取 symbol_relative 的值
             current_time = last_row.iloc[-1]['candle_begin_time']
@@ -416,6 +419,8 @@ class HedgeWaitingTradingCalc:
             # 止损平仓
             if symbol_relative_pct_change < g_stop_loss_relative_change_threshold:
                 self._in_trading_list.remove(symbol)
+                self.waiting_result_dict.pop(symbol)
+
                 self.logger().info(f'{symbol} remove from in_trading_list 止损平仓')
                 # self.in_waiting_list.remove(symbol)
                 # self.observed_symbol_param.pop(symbol)
@@ -432,6 +437,8 @@ class HedgeWaitingTradingCalc:
             if current_time - self.trading_symbol_param[symbol]['take_profit_trigger_time'] > timedelta(
                     minutes=g_opened_timeout):
                 self._in_trading_list.remove(symbol)
+                self.waiting_result_dict.pop(symbol)
+
                 self.logger().info(f'{symbol} remove from in_trading_list 触发止盈标记后超时平仓')
                 self.hedge_notify_robot.send_dingding_msg(
                     f"account: {self.account_name} \n"
@@ -463,6 +470,8 @@ class HedgeWaitingTradingCalc:
                 self._in_waiting_list.append(symbol)
                 enter_time = last_row.iloc[-1]['candle_begin_time']
                 self.observed_list_append(symbol, enter_time, last_two_row2)
+                self.waiting_result_dict[symbol] = {}
+
                 self.hedge_notify_robot.send_dingding_waiting_msg(
                     f"account: {self.account_name} \n "
                     f"追踪止盈 放入 waiting_list : {symbol} \n "
