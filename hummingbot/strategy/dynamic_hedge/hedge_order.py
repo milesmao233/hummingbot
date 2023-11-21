@@ -127,6 +127,7 @@ class HedgeOrder:
         self.in_trading_list = in_trading_list
 
     def sell_or_buy(self):
+        proposal = []
         if self._trade_type == 'spot':
             if len(self.trading_list_before_calc) > 0:
                 for trading_pair in self.trading_list_before_calc:
@@ -151,11 +152,13 @@ class HedgeOrder:
             for symbol, row in symbol_order.iterrows():
                 amount = row['实际下单量']
                 quantity = row['实际下单资金']
+                if abs(quantity) < 20:
+                    continue
                 if amount > 0:
                     is_bid = True
                 else:
                     is_bid = False
-                schedule_price = round(float(quantity / amount), 3)
+                schedule_price = round(float(abs(quantity) / abs(amount)), 3)
                 # bid_or_not =
                 self.hedge_notify_robot.send_dingding_msg(
                     f'计划 {"买入" if is_bid else "卖出"}：\n'
@@ -170,29 +173,12 @@ class HedgeOrder:
                 self.logger().info(f'拆单信息：\n {twap_symbol_info_list}', )
 
                 # =====遍历下单
-                proposal = []
                 for i in range(len(twap_symbol_info_list)):
                     # print(f"twap {i} \n", twap_symbol_info_list[i])
                     orders = self.create_active_order(twap_symbol_info_list[i])
                     # print('orders\n', orders)
                     proposal.extend(orders)
-
-                if len(proposal) > 0:
-                    adjusted_proposal = self._market.budget_checker.adjust_candidates(
-                        proposal, all_or_none=True)
-                    self.logger().info(f'adjusted_proposal \n {adjusted_proposal}')
-                    for order in adjusted_proposal:
-                        order_close = PositionAction.CLOSE if order.position_close else PositionAction.OPEN
-                        market_pair = self.find_trading_pair_tuple(order.trading_pair)
-                        if order.order_side == TradeType.BUY:
-                            order_res = self.buy_with_specific_market(market_pair, order.amount, order.order_type,
-                                                          position_action=order_close)
-
-                            print('order_res: \n', order_res)
-                        elif order.order_side == TradeType.SELL:
-                            order_res = self.sell_with_specific_market(market_pair, order.amount, order.order_type,
-                                                           position_action=order_close)
-                            print('order_res: \n', order_res)
+        return proposal
 
     def sell(self):
         pass

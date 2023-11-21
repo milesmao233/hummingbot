@@ -11,7 +11,7 @@ import pytz
 
 from hummingbot import data_path
 from hummingbot.core.clock import Clock
-from hummingbot.core.data_type.common import OrderType, PositionMode
+from hummingbot.core.data_type.common import OrderType, PositionMode, PositionAction, TradeType
 from hummingbot.core.event.events import BuyOrderCompletedEvent, SellOrderCompletedEvent
 from hummingbot.data_feed.candles_feed.candles_factory import CandlesConfig, CandlesFactory
 from hummingbot.logger import HummingbotLogger
@@ -397,7 +397,24 @@ class DynamicHedge(StrategyPyBase):
             self.dynamic_hedge_order.update_in_trading_list(in_trading_list)
             print(f'计算最新数据耗时 {end_time - start_time}')
 
-            self.dynamic_hedge_order.sell_or_buy()
+            proposal = self.dynamic_hedge_order.sell_or_buy()
+
+            if len(proposal) > 0:
+                adjusted_proposal = self._market.budget_checker.adjust_candidates(
+                    proposal, all_or_none=True)
+                self.logger().info(f'adjusted_proposal \n {adjusted_proposal}')
+                for order in adjusted_proposal:
+                    order_close = PositionAction.CLOSE if order.position_close else PositionAction.OPEN
+                    market_pair = self.find_trading_pair_tuple(order.trading_pair)
+                    if order.order_side == TradeType.BUY:
+                        order_res = self.buy_with_specific_market(market_pair, order.amount, order.order_type,
+                                                                  position_action=order_close)
+
+                        print('order_res: \n', order_res)
+                    elif order.order_side == TradeType.SELL:
+                        order_res = self.sell_with_specific_market(market_pair, order.amount, order.order_type,
+                                                                   position_action=order_close)
+                        print('order_res: \n', order_res)
 
             # self.trading_list_before_calc 和 self.in_trading_list 比较
             # 如果存在于 self.trading_list_before_calc 但是不存在于 self.in_trading_list，那么就是需要卖出的
@@ -435,6 +452,11 @@ class DynamicHedge(StrategyPyBase):
 
     def save_log(self, data, name):
         data.to_csv(self.log_data_path + f"_{name}.csv", index=False)
+
+    def find_trading_pair_tuple(self, trading_pair):
+        for x in self._market_trading_pair_tuples:
+            if x.trading_pair == trading_pair:
+                return x
 
     def did_complete_sell_order(self, order_completed_event: SellOrderCompletedEvent):
         self.logger().info(f'卖单完成：\n {order_completed_event}')
