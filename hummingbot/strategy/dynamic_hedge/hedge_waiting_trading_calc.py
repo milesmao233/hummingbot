@@ -353,6 +353,7 @@ class HedgeWaitingTradingCalc:
                     f"当前 waiting_list: {self.in_waiting_list} \n"
                     f"当前 trading_list: {self.in_trading_list}",
                 )
+                continue
 
             symbol_relative = last_row.iloc[-1]['symbol_relative']
             current_close = last_row.iloc[-1]['close']
@@ -390,6 +391,7 @@ class HedgeWaitingTradingCalc:
                     self.trading_symbol_param[symbol]['open_symbol_relative'] = last_row.iloc[-1]['symbol_relative']
                     self.trading_symbol_param[symbol]['max_symbol_relative_pct_change'] = 0
                     self.trading_symbol_param[symbol]['take_profit_trigger'] = False
+                    self.trading_symbol_param[symbol]['take_profit_trigger_time'] = None
                     # 移除 in_waiting_list
                     self._in_waiting_list.remove(symbol)
                     self.observed_symbol_param.pop(symbol)
@@ -434,8 +436,9 @@ class HedgeWaitingTradingCalc:
                 )
 
             # 超时平仓
-            if current_time - self.trading_symbol_param[symbol]['take_profit_trigger_time'] > timedelta(
-                    minutes=g_opened_timeout):
+            if (self.trading_symbol_param[symbol]['take_profit_trigger_time'] is not None and
+                    current_time - self.trading_symbol_param[symbol]['take_profit_trigger_time'] > timedelta(
+                        minutes=g_opened_timeout)):
                 self._in_trading_list.remove(symbol)
                 self.waiting_result_dict.pop(symbol)
 
