@@ -286,7 +286,6 @@ class HedgeWaitingTradingCalc:
         self.account_name = account_name
         self.waiting_result_dict = {}
 
-
     @property
     def in_trading_list(self):
         return self._in_trading_list
@@ -418,6 +417,10 @@ class HedgeWaitingTradingCalc:
             g_stop_loss_relative_change_threshold = conf['g_stop_loss_relative_change_threshold']
             g_opened_timeout = conf['g_opened_timeout']
 
+            self.logger().info(f'{symbol} trading_list 数据: ')
+            self.logger().info(f'{symbol} self.trading_symbol_param[symbol]: {self.trading_symbol_param[symbol]}')
+            self.logger().info(f'{symbol} symbol_relative_pct_change: {symbol_relative_pct_change}')
+
             # 止损平仓
             if symbol_relative_pct_change < g_stop_loss_relative_change_threshold:
                 self._in_trading_list.remove(symbol)
@@ -467,8 +470,8 @@ class HedgeWaitingTradingCalc:
                         'candle_begin_time']
 
             # 如果触发后，回落了 0.02，就追踪止盈，放入 waiting_list 中
-            if self.trading_symbol_param[symbol]['take_profit_trigger'] and ((self.trading_symbol_param[symbol][
-                                                                                  'max_symbol_relative_pct_change'] - symbol_relative_pct_change) > g_take_profit_relative_change_down_threshold):
+            if (self.trading_symbol_param[symbol]['take_profit_trigger'] and
+                    ((self.trading_symbol_param[symbol]['max_symbol_relative_pct_change'] - symbol_relative_pct_change) > g_take_profit_relative_change_down_threshold)):
                 self._in_trading_list.remove(symbol)
                 self._in_waiting_list.append(symbol)
                 enter_time = last_row.iloc[-1]['candle_begin_time']

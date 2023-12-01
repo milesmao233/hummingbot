@@ -295,19 +295,34 @@ class HedgeOrder:
         return process_coin
 
     def cal_order_amount(self, process_coin, position_df, usdt_balance):
+        take_profit_or_cover_position = False  # 是否是止盈或者补仓，True 的话止盈补仓的比例是否下单那进行更改，搜索 trading_rule.min_notional_size
         # process_coin['方向选币数量'] = process_coin.groupby(['candle_begin_time', '方向'])['symbol'].transform(
         #     'size')
         process_coin['目标持仓量'] = usdt_balance / process_coin['close'] * process_coin['方向']  # 计算每个币种的目标持仓量
+        process_coin.sort_values('candle_begin_time', inplace=True)
 
         symbol_order = pd.DataFrame(index=list(set(process_coin['symbol']) | set(position_df.index)),
                                     columns=['当前持仓量'])
+        symbol_order['close'] = process_coin.groupby('symbol')[['close']].last()
         symbol_order['当前持仓量'] = position_df['amount']
         symbol_order['当前持仓量'].fillna(value=0, inplace=True)
-        symbol_order['当前持仓量'] = symbol_order['当前持仓量'].apply(Decimal)
 
-        # =目前持仓量当中，可能可以多空合并
         symbol_order['目标持仓量'] = process_coin.groupby('symbol')[['目标持仓量']].sum()
+
+        if not take_profit_or_cover_position:
+            # 不补仓止盈
+            # 如果计算的目标仓位是0
+            #   当前持仓量不为0，说明要平仓, 目标持仓量 = 0
+            #   当前持仓量为0，说明不需要操作，目标持仓量 = 0
+            # 如果计算的目标仓位不是0， grouped_target_value
+            #   当前持仓量不为0，说明不用变动, 目标持仓量 = 当前持仓量
+            #   当前持仓量为0，说明需要建仓, 目标持仓量 = grouped_target_value
+
+            # 增加容错 symbol_order['当前持仓量'] 的值如果很小
+            symbol_order.loc[symbol_order['当前持仓量'] * symbol_order['close'] > 7, '目标持仓量'] = symbol_order['当前持仓量']
         symbol_order['目标持仓量'].fillna(value=0, inplace=True)
+
+        symbol_order['当前持仓量'] = symbol_order['当前持仓量'].apply(Decimal)
         symbol_order['目标持仓量'] = symbol_order['目标持仓量'].apply(Decimal)
         # symbol_order['目标持仓量'].apply(Decimal)
 
@@ -326,8 +341,8 @@ class HedgeOrder:
         symbol_order.loc[symbol_order['目标持仓量'] == 0, '交易模式'] = '清仓'
         symbol_order.loc[symbol_order['当前持仓量'] == 0, '交易模式'] = '建仓'
         symbol_order['交易模式'].fillna(value='调仓', inplace=True)  # 增加或者减少原有的持仓，不会降为0
-        process_coin.sort_values('candle_begin_time', inplace=True)
-        symbol_order['close'] = process_coin.groupby('symbol')[['close']].last()
+        # process_coin.sort_values('candle_begin_time', inplace=True)
+        # symbol_order['close'] = process_coin.groupby('symbol')[['close']].last()
         symbol_order['实际下单资金'] = symbol_order['实际下单量'] * symbol_order['close']
 
         del symbol_order['close']
