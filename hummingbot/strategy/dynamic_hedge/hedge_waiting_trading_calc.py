@@ -264,7 +264,7 @@ def calc_filter_trading_data(df, macd_df):
 
 class HedgeWaitingTradingCalc:
     _in_waiting_list = []
-    _in_trading_list = ['MTL-USDT']
+    _in_trading_list = []
     observed_symbol_param = {}
     trading_symbol_param = {}
 
