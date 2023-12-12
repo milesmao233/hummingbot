@@ -26,10 +26,8 @@ def settle_waiting_data(df):
     g_relative_vol_threshold_coefficient = conf["g_relative_vol_threshold_coefficient"]
     g_accu_relative_price_change_period = conf["g_accu_relative_price_change_period"]
 
-    # period = int(g_std_period / g_std_interval)
     std_interval = g_std_interval
 
-    # conf_df[f'pct_relative_{std_interval}'] = df[f'pct_change_pl_symbol_relative_fl_{std_interval}']
     conf_df['vol_change_true'] = df[f'volatility_change_true_pl_symbol_relative_fl_[{g_std_period}, {std_interval}]']
     conf_df['vol_change_threshold_true'] = \
         df[
@@ -39,8 +37,7 @@ def settle_waiting_data(df):
     conf_df['vol_change_threshold_false'] = \
         df[
             f'vol_change_threshold_false_pl_symbol_relative_fl_[{g_std_period}, {std_interval}, {g_relative_vol_threshold_period}, {g_relative_vol_threshold_update_period}, {g_relative_vol_threshold_coefficient}]']
-    conf_df[f'pct_relative_{std_interval}_std_{int(g_std_period / g_std_interval)}'] = df[
-        f'pct_change_std_pl_symbol_relative_fl_[{g_std_period}, {std_interval}]']
+
     conf_df['avg_price_5min'] = df['rolling_mean_pl_close_fl_5']
     conf_df['pct_change_relative_before'] = df['pct_change_pl_symbol_relative_fl_1']
     conf_df['pct_change_relative_accu'] = df[
@@ -68,10 +65,6 @@ def calc_filter_waiting_data(df):
         "check_accu_relative_price_change_threshold"]
     check_totalamount_condition_0 = waiting_list_switch["check_totalamount_condition_0"]
 
-    g_std_interval = conf["g_std_interval"]
-    g_std_period = conf["g_std_period"]
-    std_period = int(g_std_period / g_std_interval)
-    std_interval = g_std_interval
     g_price_change_threshold = conf["g_price_change_threshold"]
     g_relative_price_change_threshold = conf["g_relative_price_change_threshold"]
     g_accu_relative_price_change_threshold = conf["g_accu_relative_price_change_threshold"]
@@ -131,8 +124,7 @@ def settle_trading_data(df):
     conf_df['vol_change_threshold_false'] = \
         df[
             f'vol_change_threshold_false_pl_symbol_relative_fl_[{g_std_period}, {std_interval}, {g_relative_vol_threshold_period}, {g_relative_vol_threshold_update_period}, {g_relative_vol_threshold_coefficient}]']
-    conf_df[f'pct_relative_{std_interval}_std_{int(g_std_period / g_std_interval)}'] = df[
-        f'pct_change_std_pl_symbol_relative_fl_[{g_std_period}, {std_interval}]']
+
     conf_df['avg_price_5min'] = df['rolling_mean_pl_close_fl_5']
     conf_df['pct_change_relative_before'] = df['pct_change_pl_symbol_relative_fl_1']
 
@@ -209,10 +201,6 @@ def calc_filter_trading_data(df, macd_df):
     df['2-5-V1'] = np.where((df['vol_change_true'] > df['vol_change_threshold_true'])
                             & check_relative_vol_threshold_True, 1, 0)
 
-    g_std_interval = conf["g_std_interval"]
-    g_std_period = conf["g_std_period"]
-    std_period = int(g_std_period / g_std_interval)
-    std_interval = g_std_interval
     df['2-5-V2'] = np.where((df[f'vol_change_false']
                              > df['vol_change_threshold_false'])
                             & check_relative_vol_threshold_False, 1, 0)
