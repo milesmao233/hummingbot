@@ -423,7 +423,7 @@ class HedgeWaitingTradingCalc:
             g_opened_timeout = conf['g_opened_timeout']
 
             self.logger().info(f'{symbol} trading_list 数据: ')
-            self.logger().info(f'{symbol} last_row: {last_row}')
+            # self.logger().info(f'{symbol} last_row: {last_row}')
             self.logger().info(f'{symbol} self.trading_symbol_param[symbol]: {self.trading_symbol_param[symbol]}')
             self.logger().info(f'{symbol} symbol_relative_pct_change: {symbol_relative_pct_change}')
 
