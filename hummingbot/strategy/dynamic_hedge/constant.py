@@ -27,14 +27,19 @@ strategy_conf = {
             'column_name': 'symbol_relative',
             'params_list': [1, 5, 10]
         },
+        # {
+        #     'filter': 'pct_change_std',
+        #     'column_name': 'symbol_relative',
+        #     'params_list': [[60, 5]],
+        #
+        # },
         {
-            'filter': 'pct_change_std',
+            'filter': 'volatility_change_true',
             'column_name': 'symbol_relative',
             'params_list': [[60, 5]],
-
         },
         {
-            'filter': 'volatility_change',
+            'filter': 'volatility_change_false',
             'column_name': 'symbol_relative',
             'params_list': [[60, 5]],
         },

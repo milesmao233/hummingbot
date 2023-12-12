@@ -406,6 +406,8 @@ class DynamicHedge(StrategyPyBase):
                 for order in adjusted_proposal:
                     order_close = PositionAction.CLOSE if order.position_close else PositionAction.OPEN
                     market_pair = self.find_trading_pair_tuple(order.trading_pair)
+                    if order.amount * order.price < 10:
+                        continue
                     if order.order_side == TradeType.BUY:
                         order_res = self.buy_with_specific_market(market_pair, order.amount, order.order_type,
                                                                   position_action=order_close)

@@ -30,10 +30,12 @@ def settle_waiting_data(df):
     std_interval = g_std_interval
 
     # conf_df[f'pct_relative_{std_interval}'] = df[f'pct_change_pl_symbol_relative_fl_{std_interval}']
-    conf_df['vol_change'] = df[f'volatility_change_pl_symbol_relative_fl_[{g_std_period}, {std_interval}]']
+    conf_df['vol_change_true'] = df[f'volatility_change_true_pl_symbol_relative_fl_[{g_std_period}, {std_interval}]']
     conf_df['vol_change_threshold_true'] = \
         df[
             f'vol_change_threshold_true_pl_symbol_relative_fl_[{g_std_period}, {std_interval}, {g_relative_vol_threshold_period}, {g_relative_vol_threshold_update_period}, {g_relative_vol_threshold_coefficient}]']
+
+    conf_df['vol_change_false'] = df[f'volatility_change_false_pl_symbol_relative_fl_[{g_std_period}, {std_interval}]']
     conf_df['vol_change_threshold_false'] = \
         df[
             f'vol_change_threshold_false_pl_symbol_relative_fl_[{g_std_period}, {std_interval}, {g_relative_vol_threshold_period}, {g_relative_vol_threshold_update_period}, {g_relative_vol_threshold_coefficient}]']
@@ -74,9 +76,9 @@ def calc_filter_waiting_data(df):
     g_relative_price_change_threshold = conf["g_relative_price_change_threshold"]
     g_accu_relative_price_change_threshold = conf["g_accu_relative_price_change_threshold"]
 
-    df['2-3-X1'] = np.where((df['vol_change'] > df['vol_change_threshold_true'])
+    df['2-3-X1'] = np.where((df['vol_change_true'] > df['vol_change_threshold_true'])
                             & check_relative_vol_threshold_True, 1, 0)
-    df['2-3-X2'] = np.where((df[f'pct_relative_{std_interval}_std_{std_period}'] > df['vol_change_threshold_false'])
+    df['2-3-X2'] = np.where((df[f'vol_change_false'] > df['vol_change_threshold_false'])
                             & check_relative_vol_threshold_False, 1, 0)
     df['2-3-11'] = np.where(((df['close'] / df['avg_price_5min']) - 1 > g_price_change_threshold)
                             & check_price_change_threshold, 1, 0)
@@ -121,10 +123,11 @@ def settle_trading_data(df):
     g_relative_vol_threshold_update_period = conf["g_relative_vol_threshold_update_period"]
     g_relative_vol_threshold_coefficient = conf["g_relative_vol_threshold_coefficient"]
 
-    conf_df['vol_change'] = df[f'volatility_change_pl_symbol_relative_fl_[{g_std_period}, {std_interval}]']
+    conf_df['vol_change_true'] = df[f'volatility_change_true_pl_symbol_relative_fl_[{g_std_period}, {std_interval}]']
     conf_df['vol_change_threshold_true'] = \
         df[
             f'vol_change_threshold_true_pl_symbol_relative_fl_[{g_std_period}, {std_interval}, {g_relative_vol_threshold_period}, {g_relative_vol_threshold_update_period}, {g_relative_vol_threshold_coefficient}]']
+    conf_df['vol_change_false'] = df[f'volatility_change_false_pl_symbol_relative_fl_[{g_std_period}, {std_interval}]']
     conf_df['vol_change_threshold_false'] = \
         df[
             f'vol_change_threshold_false_pl_symbol_relative_fl_[{g_std_period}, {std_interval}, {g_relative_vol_threshold_period}, {g_relative_vol_threshold_update_period}, {g_relative_vol_threshold_coefficient}]']
@@ -203,14 +206,14 @@ def calc_filter_trading_data(df, macd_df):
     check_totalamount_condition_1 = trading_list_switch["check_totalamount_condition_1"]
     check_totalamount_condition_2 = trading_list_switch["check_totalamount_condition_2"]
 
-    df['2-5-V1'] = np.where((df['vol_change'] > df['vol_change_threshold_true'])
+    df['2-5-V1'] = np.where((df['vol_change_true'] > df['vol_change_threshold_true'])
                             & check_relative_vol_threshold_True, 1, 0)
 
     g_std_interval = conf["g_std_interval"]
     g_std_period = conf["g_std_period"]
     std_period = int(g_std_period / g_std_interval)
     std_interval = g_std_interval
-    df['2-5-V2'] = np.where((df[f'pct_relative_{std_interval}_std_{std_period}']
+    df['2-5-V2'] = np.where((df[f'vol_change_false']
                              > df['vol_change_threshold_false'])
                             & check_relative_vol_threshold_False, 1, 0)
 

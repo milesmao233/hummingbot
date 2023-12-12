@@ -1,4 +1,4 @@
-from hummingbot.strategy.filter_factors.utils.calc_std_index import calc_std_for_index
+from hummingbot.strategy.filter_factors.utils.calc_std_index import calc_std_for_index, calculate_rolling_std
 
 
 def signal(*args):
@@ -16,7 +16,11 @@ def signal(*args):
     period = int(std_period / std_interval)
 
     df[f'{column_name}_pct_change'] = df[column_name].pct_change(std_interval)
-    df[f'{column_name}_pct_change_std'] = df[f'{column_name}_pct_change'].rolling(period).std(ddof=0)
+
+    # 计算标准差，60,5 的参数，表示计算最近60分钟，每5分钟的标准差
+    df[f'{column_name}_pct_change_std'] = calculate_rolling_std(df[column_name], period, std_interval)
+
+    # df[f'{column_name}_pct_change_std'] = df[f'{column_name}_pct_change'].rolling(period).std(ddof=0)
 
     df[factor_name] = df.index.to_series().apply(
         lambda x: calc_std_for_index(

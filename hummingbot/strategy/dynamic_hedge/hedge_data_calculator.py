@@ -76,12 +76,14 @@ class HedgeDataCalculator:
         factor_filter_list = []
         if self.multiply_process:
             factor_filter_list = Parallel(n_jobs=max(os.cpu_count() - 1, 1))(
-                delayed(HedgeCommonMethod.calc_one_df_filter)(symbol_name, coin_df, factor_filter_dict, strategy_conf, head_columns)
+                delayed(HedgeCommonMethod.calc_one_df_filter)(symbol_name, coin_df, factor_filter_dict, strategy_conf,
+                                                              head_columns)
                 for symbol_name, coin_df in df_with_index.items()
             )
         else:
             for symbol_name, coin_df in df_with_index.items():
-                d = HedgeCommonMethod.calc_one_df_filter(symbol_name, coin_df, factor_filter_dict, strategy_conf, head_columns)
+                d = HedgeCommonMethod.calc_one_df_filter(symbol_name, coin_df, factor_filter_dict, strategy_conf,
+                                                         head_columns)
                 factor_filter_list.append(d)
 
         factor_filter_dict_result = {}
@@ -298,23 +300,22 @@ class HedgeDataCalculator:
                 column_name = filter_factor['column_name']
                 params_list = filter_factor['params_list']
 
-                if filter_name == 'pct_change_std':
-                    pass
-                    for params in params_list:
-                        std_period = int(params[0])
-                        pct_span = int(params[1])
-                        period = std_period / pct_span
+                # if filter_name == 'pct_change_std':
+                #     for params in params_list:
+                #         std_period = int(params[0])
+                #         pct_span = int(params[1])
+                #         period = std_period / pct_span
+                #
+                #         if int(i - period + 1) < 1:
+                #             current_pct_change_std = np.nan
+                #         else:
+                #             previous_pct_change_list = df.iloc[int(i - period + 1):(i + 1)][
+                #                 f'pct_change_pl_{column_name}_fl_{pct_span}'].values
+                #             current_pct_change_std = np.std(previous_pct_change_list)
+                #
+                #         df.loc[i, f'{filter_name}_pl_{column_name}_fl_{params}'] = current_pct_change_std
 
-                        if int(i - period + 1) < 1:
-                            current_pct_change_std = np.nan
-                        else:
-                            previous_pct_change_list = df.iloc[int(i - period + 1):(i + 1)][
-                                f'pct_change_pl_{column_name}_fl_{pct_span}'].values
-                            current_pct_change_std = np.std(previous_pct_change_list)
-
-                        df.loc[i, f'{filter_name}_pl_{column_name}_fl_{params}'] = current_pct_change_std
-
-                elif filter_name == 'quote_volume_history_period_x_times':
+                if filter_name == 'quote_volume_history_period_x_times':
                     for params in params_list:
                         quote_volume_calc_period = int(params[0])  # 5
                         quote_volume_history_period = int(params[1])  # 7
@@ -330,25 +331,33 @@ class HedgeDataCalculator:
                             i, f'{filter_name}_pl_{column_name}_fl_{params}'] = (
                                 quote_volume_history_period * quote_volume_x_times)
 
-                elif filter_name == 'volatility_change':
+                elif filter_name == 'volatility_change_false':
                     for params in params_list:
                         std_period = int(params[0])
                         std_interval = int(params[1])
+                        period = int(std_period / std_interval)
 
-                        if int(i - std_period + 1) < 1:
-                            vol_change = np.nan
-                        else:
-                            previous_pct_change_list = df.iloc[int(i - std_period + 1):(i + 1)][
-                                f'pct_change_pl_{column_name}_fl_{std_interval}'].values
-                            current_pct_change_std = np.std(previous_pct_change_list)
+                        start = max(0, i - (period - 1) * std_interval)
+                        end = i + 1
+                        window_std = (df[f'pct_change_pl_{column_name}_fl_{std_interval}'].iloc[start:end:std_interval]
+                                      .std(ddof=0))
+                        df.loc[i, f'{filter_name}_pl_{column_name}_fl_{params}'] = window_std
 
-                            shift_pct_change_list = df.iloc[int(i - std_period):i][
-                                f'pct_change_pl_{column_name}_fl_{std_interval}'].values
-                            shift_pct_change_std = np.std(shift_pct_change_list)
+                elif filter_name == 'volatility_change_true':
+                    for params in params_list:
+                        std_period = int(params[0])
+                        std_interval = int(params[1])
+                        period = int(std_period / std_interval)
 
-                            vol_change = current_pct_change_std / shift_pct_change_std - 1
-
-                        df.loc[i, f'{filter_name}_pl_{column_name}_fl_{params}'] = vol_change
+                        start = max(0, i - (period - 1) * std_interval)
+                        end = i + 1
+                        current_std = (df[f'pct_change_pl_{column_name}_fl_{std_interval}'].iloc[start:end:std_interval]
+                                       .std(ddof=0))
+                        start_shift = max(0, i - (period - 1) * std_interval - 1)
+                        end_shift = i
+                        shift_std = (df[f'pct_change_pl_{column_name}_fl_{std_interval}'].iloc[start_shift:end_shift:std_interval]
+                                     .std(ddof=0))
+                        df.loc[i, f'{filter_name}_pl_{column_name}_fl_{params}'] = current_std / shift_std - 1
 
                 elif filter_name == 'macd_dea':
                     for params in params_list:
@@ -404,7 +413,7 @@ class HedgeDataCalculator:
                         else:
                             previous_vol_change_threshold_values \
                                 = df.iloc[i - relative_vol_threshold_period + 1:i + 1][
-                                f'pct_change_std_pl_{column_name}_fl_{[std_period, std_interval]}'].values
+                                f'volatility_change_false_pl_{column_name}_fl_{[std_period, std_interval]}'].values
                             vol_change_threshold_value = np.std(
                                 previous_vol_change_threshold_values) * relative_vol_threshold_coefficient
 
@@ -432,13 +441,10 @@ class HedgeDataCalculator:
                         else:
                             previous_vol_change_threshold_values \
                                 = df.iloc[i - relative_vol_threshold_period + 1:i + 1][
-                                f'volatility_change_pl_{column_name}_fl_{[std_period, std_interval]}'].values
+                                f'volatility_change_true_pl_{column_name}_fl_{[std_period, std_interval]}'].values
                             vol_change_threshold_value = np.std(
                                 previous_vol_change_threshold_values) * relative_vol_threshold_coefficient
 
                         df.loc[i, f'{filter_name}_pl_{column_name}_fl_{params}'] = vol_change_threshold_value
 
         return df
-
-
-
