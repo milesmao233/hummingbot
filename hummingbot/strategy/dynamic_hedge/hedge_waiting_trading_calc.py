@@ -381,6 +381,7 @@ class HedgeWaitingTradingCalc:
                     self.trading_symbol_param[symbol]['symbol'] = symbol
                     self.trading_symbol_param[symbol]['enter_time'] = last_row.iloc[-1]['candle_begin_time']
                     self.trading_symbol_param[symbol]['open_symbol_relative'] = last_row.iloc[-1]['symbol_relative']
+                    self.trading_symbol_param[symbol]['open_close'] = last_row.iloc[-1]['close']
                     self.trading_symbol_param[symbol]['max_symbol_relative_pct_change'] = 0
                     self.trading_symbol_param[symbol]['take_profit_trigger'] = False
                     self.trading_symbol_param[symbol]['take_profit_trigger_time'] = None
@@ -403,9 +404,11 @@ class HedgeWaitingTradingCalc:
 
             # 获取 symbol_relative 的值
             current_time = last_row.iloc[-1]['candle_begin_time']
+            symbol_close = last_row.iloc[-1]['close']
             symbol_relative = last_row.iloc[-1]['symbol_relative']
             symbol_relative_pct_change = symbol_relative / self.trading_symbol_param[symbol][
                 'open_symbol_relative'] - 1
+            symbol_close_pct_change = symbol_close/self.trading_symbol_param[symbol]['open_close'] - 1
 
             g_stop_loss_relative_change_threshold = conf['g_stop_loss_relative_change_threshold']
             g_opened_timeout = conf['g_opened_timeout']
@@ -414,20 +417,21 @@ class HedgeWaitingTradingCalc:
             # self.logger().info(f'{symbol} last_row: {last_row}')
             self.logger().info(f'{symbol} self.trading_symbol_param[symbol]: {self.trading_symbol_param[symbol]}')
             self.logger().info(f'{symbol} symbol_relative_pct_change: {symbol_relative_pct_change}')
+            self.logger().info(f'{symbol} symbol_close_pct_change: {symbol_close_pct_change}')
 
             # 止损平仓
-            if symbol_relative_pct_change < g_stop_loss_relative_change_threshold:
+            if symbol_close_pct_change < g_stop_loss_relative_change_threshold:
                 self._in_trading_list.remove(symbol)
                 # self.waiting_result_dict.pop(symbol)
 
-                self.logger().info(f'{symbol} remove from in_trading_list 止损平仓')
+                self.logger().info(f'{symbol} remove from in_trading_list 止损 5% 平仓')
                 # self.in_waiting_list.remove(symbol)
                 # self.observed_symbol_param.pop(symbol)
                 # self.logger().info(f'{symbol} remove from in_waiting_list')
 
                 self.hedge_notify_robot.send_dingding_msg(
                     f"account: {self.account_name} \n"
-                    f"移除 trading_list 信号: {symbol} 止损平仓 \n "
+                    f"移除 trading_list 信号: {symbol} 止损 5% 平仓 \n "
                     f"当前 waiting_list: {self.in_waiting_list} \n "
                     f"当前 trading_list: {self.in_trading_list}",
                 )

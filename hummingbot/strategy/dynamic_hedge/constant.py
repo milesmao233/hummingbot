@@ -183,7 +183,7 @@ strategy_conf = {
         "g_take_profit_relative_change_trigger_threshold": 0.02,
         "g_take_profit_relative_change_down_threshold": 0.02,
         "g_take_profit_relative_percent_threshold": 0,
-        "g_stop_loss_relative_change_threshold": -0.03,
+        "g_stop_loss_relative_change_threshold": -0.05,
         "g_opened_timeout": 240,
         "g_total_fund": 10000,
         "g_leverage": 6,
